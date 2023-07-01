@@ -73,9 +73,21 @@ int main() {
     int mouse_x = 0;
     int mouse_y = 0;
 
+    // XTextProperty title;
+
+    char window_title[32];
+
     while (running) {
         float delta_ms = diff_time_ms(&t);
         // printf("Time elapsed: %.2f ms\n", delta_ms);
+
+        {
+            XTextProperty title;
+            snprintf(window_title, sizeof(window_title), "FPS: %.2f", 1000.0 / delta_ms);
+            char *list[] = {window_title};
+            XStringListToTextProperty(list, 1, &title);
+            XSetWMName(display, window, &title);
+        }
 
         // oval distance
         {

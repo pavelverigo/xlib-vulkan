@@ -190,6 +190,7 @@ static void memory_init(Engine *e) {
 
 	uint32_t mem_type_index = UINT32_MAX;
 	uint64_t best_memory_size = 0;
+	// TODO: we do need CACHED_BIT try to choose if alternative is possible without cached choose it
 	for (uint32_t i = 0; i < mem_prop.memoryTypeCount; i++) {
 		VkMemoryType mem_type = mem_prop.memoryTypes[i];
 		uint64_t heap_size = mem_prop.memoryHeaps[mem_type.heapIndex].size;
@@ -263,11 +264,11 @@ void swapchain_init(Engine *e) {
 	
 	// TODO: fifo is always avaible we may be want to query another one
     VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
-	// TODO: you may want to find or others, VK_PRESENT_MODE_MAILBOX_KHR
+	// TODO: you may want to use VK_PRESENT_MODE_MAILBOX_KHR, it actually the best for no vsync
 	{
 		// VkPresentModeKHR desired = VK_PRESENT_MODE_MAILBOX_KHR;
-		// VkPresentModeKHR desired = VK_PRESENT_MODE_IMMEDIATE_KHR;
-		VkPresentModeKHR desired = VK_PRESENT_MODE_FIFO_KHR;
+		VkPresentModeKHR desired = VK_PRESENT_MODE_IMMEDIATE_KHR;
+		// VkPresentModeKHR desired = VK_PRESENT_MODE_FIFO_KHR;
 
 		uint32_t present_mode_count = 0;
 
@@ -295,13 +296,14 @@ void swapchain_init(Engine *e) {
         swapchain_extent.height = HEIGHT;
     }
 
-	// NOTE: I know that it actually checks that maxImageCount == 1, but this code more from when 2 set higher value
-	// surface_capabilities.maxImageCount != 0, checked because zero stand for unlimited
-	if (surface_capabilities.maxImageCount < 2 && surface_capabilities.maxImageCount != 0) {
-        fprintf(stderr, "surface_capabilities.maxImageCount < 2 && surface_capabilities.maxImageCount != 0\n");
+	// NOTE: surface_capabilities.maxImageCount != 0, checked because zero stand for unlimited
+	// triple buffering because if we use VK_PRESENT_MODE_MAILBOX_KHR it is only reasonable alternative
+	uint32_t desired_image_count = 3;
+	if (surface_capabilities.maxImageCount < desired_image_count && surface_capabilities.maxImageCount != 0) {
+        fprintf(stderr, "surface_capabilities.maxImageCount < 3 && surface_capabilities.maxImageCount != 0\n");
 		exit(1);
     }
-    uint32_t image_count = 2;
+    uint32_t image_count = desired_image_count;
 
 	// TODO: flags
 	// TODO: imageExtent have actually can have strange behaviour, need to research
