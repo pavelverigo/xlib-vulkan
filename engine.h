@@ -19,13 +19,10 @@ typedef struct Engine {
 
     VkExtent2D window;
 
-
     VkFramebuffer *framebuffers;
-
-   
-	
+    
     VkPhysicalDevice phys_device;
-	
+    
     VkDevice device;
 
     VkSemaphore present_sema, render_sema;
@@ -37,22 +34,22 @@ typedef struct Engine {
     uint32_t graphics_queue_family;
 
     VkCommandPool command_pool;
-	VkCommandBuffer command_buffer;
+    VkCommandBuffer command_buffer;
 
     VkRenderPass render_pass;
 
     
-	VkSwapchainKHR swapchain;
-	
+    VkSwapchainKHR swapchain;
+    
     VkBuffer buffer;
     VkDeviceMemory memory;
     void *mapped_data;
-	
+    
 
-	VkPipelineLayout triangle_pipeline_layout;
+    VkPipelineLayout triangle_pipeline_layout;
 
-	VkPipeline triangle_pipeline;
-	VkPipeline red_triangle_pipeline;
+    VkPipeline triangle_pipeline;
+    VkPipeline red_triangle_pipeline;
 } Engine;
 
 void engine_init(Engine *e, Display *display, Window window);

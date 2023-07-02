@@ -160,7 +160,7 @@ int main() {
 
         engine_draw(&engine, accum_cycle);
 
-        // nanosleep(&sleep_t, NULL);
+        nanosleep(&sleep_t, NULL);
     }
 
     engine_deinit(&engine);
