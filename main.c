@@ -52,8 +52,9 @@ int main() {
     Engine engine;
     engine_init(&engine, display, window);    
 
-    struct timespec t;
-    clock_gettime(CLOCK_MONOTONIC, &t);
+    struct timespec delta_timer, debug_timer;
+    clock_gettime(CLOCK_MONOTONIC, &delta_timer);
+    clock_gettime(CLOCK_MONOTONIC, &debug_timer); 
 
     struct timespec sleep_t = {
         .tv_nsec = 1 * 1000000,
@@ -78,7 +79,9 @@ int main() {
     char window_title[32];
 
     while (running) {
-        float delta_ms = diff_time_ms(&t);
+        float delta_ms = diff_time_ms(&delta_timer);
+        // float render_ms = diff_time_ms(&debug_timer);
+        // printf("render_ms %.2f ms\n", render_ms);
         // printf("Time elapsed: %.2f ms\n", delta_ms);
 
         {
@@ -87,6 +90,7 @@ int main() {
             char *list[] = {window_title};
             XStringListToTextProperty(list, 1, &title);
             XSetWMName(display, window, &title);
+            XFree(title.value);
         }
 
         // oval distance
@@ -146,9 +150,17 @@ int main() {
             }
         }
 
+        if (!running) {
+            break;
+        }
+        
+        // float x_ms = diff_time_ms(&debug_timer);
+        // printf("x_ms %.2f ms\n", x_ms);
+        
+
         engine_draw(&engine, accum_cycle);
 
-        nanosleep(&sleep_t, NULL);
+        // nanosleep(&sleep_t, NULL);
     }
 
     engine_deinit(&engine);

@@ -150,8 +150,11 @@ void vulkan_init(Engine *e, Display *display, Window window) {
 
 static
 void vulkan_deinit(Engine *e) {
-	// TODO vkDeviceWaitIdle can be used
 	vkDestroyDevice(e->device, NULL);
+
+    vkDestroySurfaceKHR(e->instance, e->surface, NULL);
+
+    vkDestroyInstance(e->instance, NULL);
 }
 
 static void memory_init(Engine *e) {
@@ -188,38 +191,64 @@ static void memory_init(Engine *e) {
 	VkPhysicalDeviceMemoryProperties mem_prop;
 	vkGetPhysicalDeviceMemoryProperties(e->phys_device, &mem_prop);
 
-	uint32_t mem_type_index = UINT32_MAX;
-	uint64_t best_memory_size = 0;
+    uint32_t type_candid_count = 0;
+    uint32_t type_candid[VK_MAX_MEMORY_TYPES];
+	
 	// TODO: we do need CACHED_BIT try to choose if alternative is possible without cached choose it
 	for (uint32_t i = 0; i < mem_prop.memoryTypeCount; i++) {
 		VkMemoryType mem_type = mem_prop.memoryTypes[i];
-		uint64_t heap_size = mem_prop.memoryHeaps[mem_type.heapIndex].size;
 		if ((mem_req.memoryTypeBits & (1 << i)) &&
 			(mem_type.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
-			(mem_type.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) &&
-			(heap_size > best_memory_size)) {
-			mem_type_index = i;
-			best_memory_size = heap_size;
-			break;
+			(mem_type.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+            type_candid[type_candid_count] = i;
+            type_candid_count++;
 		}
 	}
 
-	if (mem_type_index == UINT32_MAX) {
+    if (type_candid_count == 0) {
 		fprintf(stderr, "Unable to find memory type\n");
         exit(1);
 	}
 
+    printf("Found %d types of memory for candidates\n", type_candid_count);
+    for (uint32_t i = 0; i < type_candid_count; i++) {
+        VkMemoryType mem_type = mem_prop.memoryTypes[type_candid[i]];
+		VkMemoryHeap heap = mem_prop.memoryHeaps[mem_type.heapIndex];
+        double mib_size = heap.size / 1024.0 / 1024.0;
+        printf("Type: %d, flags: %d, heap size: %.2f, heap: %d\n",
+            type_candid[i], mem_type.propertyFlags, mib_size, mem_type.heapIndex);
+    }
+
+    uint32_t best_mem_type_index = type_candid[0];
+	uint64_t best_memory_size;
+    {
+        VkMemoryType temp = mem_prop.memoryTypes[type_candid[0]];
+        best_memory_size = mem_prop.memoryHeaps[temp.heapIndex].size;
+    }
+
+    // TODO: better heuristic
+    for (uint32_t i = 1; i < type_candid_count; i++) {
+        VkMemoryType mem_type = mem_prop.memoryTypes[type_candid[i]];
+		uint64_t heap_size = mem_prop.memoryHeaps[mem_type.heapIndex].size;
+        uint32_t cur_best_flags = mem_prop.memoryTypes[best_mem_type_index].propertyFlags;
+		if (heap_size > best_memory_size ||
+            (heap_size == best_memory_size && cur_best_flags > mem_type.propertyFlags)) {
+            best_mem_type_index = type_candid[i];
+            best_memory_size = heap_size;
+		}
+    }
+
 	{
-		uint32_t heap_index = mem_prop.memoryTypes[mem_type_index].heapIndex;
+		uint32_t heap_index = mem_prop.memoryTypes[best_mem_type_index].heapIndex;
 		double mib_size = mem_prop.memoryHeaps[heap_index].size / 1024.0 / 1024.0;
 
-		printf("Memory found. Heap: %d, Type: %d, Size: %.2f\n", heap_index, mem_type_index, mib_size);
+		printf("Memory found. Heap: %d, Type: %d, Size: %.2f\n", heap_index, best_mem_type_index, mib_size);
 	}
 
 	VkMemoryAllocateInfo mem_alloc_info = {
 		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
 		.allocationSize = mem_req.size,
-		.memoryTypeIndex = mem_type_index,
+		.memoryTypeIndex = best_mem_type_index,
 	};
 
 	VK_CHECK(vkAllocateMemory(e->device, &mem_alloc_info, NULL, &e->memory));
@@ -361,7 +390,7 @@ void swapchain_init(Engine *e) {
 
 static
 void swapchain_deinit(Engine *e) {
-	for (int i = e->swapchain_image_count; i >= 0; i--) {
+	for (int i = e->swapchain_image_count - 1; i >= 0; i--) {
 		vkDestroyImageView(e->device, e->swapchain_image_views[i], NULL);
 	}
 
@@ -450,7 +479,7 @@ void framebuffers_init(Engine *e) {
 
 static
 void framebuffers_deinit(Engine *e) {
-	for (int i = e->swapchain_image_count; i >= 0; i--) {
+	for (int i = e->swapchain_image_count - 1; i >= 0; i--) {
 		vkDestroyFramebuffer(e->device, e->framebuffers[i], NULL);
 	}
 
@@ -746,6 +775,9 @@ void engine_init(Engine *e, Display *display, Window window) {
 }
 
 void engine_deinit(Engine *e) {
+    // TODO: correct spot?
+    vkDeviceWaitIdle(e->device);
+
 	pipelines_deinit(e); printf("pipelines_deinit(e)\n"); fflush(stdout);
 
 	sync_structures_deinit(e); printf("sync_structures_deinit(e)\n"); fflush(stdout);
