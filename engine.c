@@ -1,15 +1,14 @@
 #include "engine.h"
 
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <math.h>
-#include <vulkan/vulkan_core.h>
 
-#define WIDTH 600
-#define HEIGHT 600
+#include <X11/Xutil.h>
 
-#define PI 3.14159265358979323846
+#define VK_USE_PLATFORM_XLIB_KHR
+#include <vulkan/vulkan.h>
 
 #define VK_CHECK(expr) do { \
     VkResult result = expr; \
@@ -19,42 +18,47 @@
     } \
 } while(0)
 
+// Instance, Surface, Physical Device, Queue, Device
 static 
-void vulkan_init(Engine *e, Display *display, Window window) {
-    // driver vendor may use this
-    VkApplicationInfo app_info = {
-        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        .pApplicationName = "ApplicationName",
-        .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-        .pEngineName = "EngineName",
-        .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-        .apiVersion = VK_API_VERSION_1_0,
-    };
+void base_init(Engine *e, Display *display, Window window) {
+    {
+        // Driver vendor may use this
+        VkApplicationInfo app_info = {
+            .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+            .pApplicationName = "ApplicationName",
+            .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
+            .pEngineName = "EngineName",
+            .engineVersion = VK_MAKE_VERSION(1, 0, 0),
+            .apiVersion = VK_API_VERSION_1_0,
+        };
 
-    const char *global_extensions[] = {
-        VK_KHR_SURFACE_EXTENSION_NAME,
-        VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
-    };
+        const char *global_extensions[] = {
+            VK_KHR_SURFACE_EXTENSION_NAME,
+            VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
+        };
 
-    // TODO: VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR can be set for flags
-    // TODO: layers
-    VkInstanceCreateInfo instance_ci = {
-        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pApplicationInfo = &app_info,
-        .enabledExtensionCount = sizeof(global_extensions) / sizeof(const char *),
-        .ppEnabledExtensionNames = global_extensions,
-    };
+        // TODO: VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR can be set for flags
+        // TODO: layers
+        VkInstanceCreateInfo instance_ci = {
+            .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+            .pApplicationInfo = &app_info,
+            .enabledExtensionCount = sizeof(global_extensions) / sizeof(const char *),
+            .ppEnabledExtensionNames = global_extensions,
+        };
 
-    VK_CHECK(vkCreateInstance(&instance_ci, NULL, &e->instance));
+        VK_CHECK(vkCreateInstance(&instance_ci, NULL, &e->instance));
+    }
 
-    // Create Vulkan surface for X11 window
-    VkXlibSurfaceCreateInfoKHR xlib_surface_ci = {
-        .sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
-        .dpy = display,
-        .window = window,
-    };
+    {
+        // Create Vulkan surface for X11 window
+        VkXlibSurfaceCreateInfoKHR xlib_surface_ci = {
+            .sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
+            .dpy = display,
+            .window = window,
+        };
 
-    VK_CHECK(vkCreateXlibSurfaceKHR(e->instance,  &xlib_surface_ci, NULL, &e->surface));
+        VK_CHECK(vkCreateXlibSurfaceKHR(e->instance,  &xlib_surface_ci, NULL, &e->surface));
+    }
 
     // TODO: pick device better, may be you want specific one
     {
@@ -83,10 +87,10 @@ void vulkan_init(Engine *e, Display *display, Window window) {
         free(phys_devices);
     }
 
-    e->graphics_queue_family = UINT32_MAX;
-
     // TODO: pick queue better, may be you want specific one
     {
+        e->graphics_queue_family = UINT32_MAX;
+
         uint32_t queue_family_count = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(e->phys_device, &queue_family_count, NULL);
         VkQueueFamilyProperties *queue_families = malloc(queue_family_count * sizeof(VkQueueFamilyProperties));
@@ -111,53 +115,155 @@ void vulkan_init(Engine *e, Display *display, Window window) {
         free(queue_families);
     }
 
-    const float queue_priorities[] = {
-        1.0f,
-    };
+    {
+        const float queue_priorities[] = {
+            1.0f,
+        };
 
-    VkDeviceQueueCreateInfo queue_ci = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .flags = 0,
-        .queueFamilyIndex = e->graphics_queue_family,
-        .queueCount = sizeof(queue_priorities) / sizeof(float),
-        .pQueuePriorities = queue_priorities,
-    };
+        VkDeviceQueueCreateInfo queue_ci = {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .flags = 0,
+            .queueFamilyIndex = e->graphics_queue_family,
+            .queueCount = sizeof(queue_priorities) / sizeof(float),
+            .pQueuePriorities = queue_priorities,
+        };
 
-    const char *device_extensions[] = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    };
+        const char *device_extensions[] = {
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        };
 
-    // TODO: pNext can be something useful here, for features
+        // TODO: pNext can be something useful here, for features
 
-    // .enabledLayerCount and .ppEnabledLayerNames deprecated
-    // TODO: for some reason, there is still some recomendation to put here
-    // https://registry.khronos.org/vulkan/specs/1.3-extensions/html/vkspec.html#extendingvulkan-layers-devicelayerdeprecation
-    
-    VkDeviceCreateInfo device_ci = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &queue_ci,
+        // .enabledLayerCount and .ppEnabledLayerNames deprecated
+        // TODO: for some reason, there is still some recomendation to put here
+        // https://registry.khronos.org/vulkan/specs/1.3-extensions/html/vkspec.html#extendingvulkan-layers-devicelayerdeprecation
         
-        .enabledExtensionCount = sizeof(device_extensions) / sizeof(const char *),
-        .ppEnabledExtensionNames = device_extensions,
-        .pEnabledFeatures = NULL
-    };
+        VkDeviceCreateInfo device_ci = {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .queueCreateInfoCount = 1,
+            .pQueueCreateInfos = &queue_ci,
+            
+            .enabledExtensionCount = sizeof(device_extensions) / sizeof(const char *),
+            .ppEnabledExtensionNames = device_extensions,
+            .pEnabledFeatures = NULL
+        };
 
-    VK_CHECK(vkCreateDevice(e->phys_device, &device_ci, NULL, &e->device));
+        VK_CHECK(vkCreateDevice(e->phys_device, &device_ci, NULL, &e->device));
 
-    vkGetDeviceQueue(e->device, e->graphics_queue_family, 0, &e->graphics_queue);
+        vkGetDeviceQueue(e->device, e->graphics_queue_family, 0, &e->graphics_queue);
+    }
+
+    {
+        VkCommandPoolCreateInfo command_pool_ci = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+            .queueFamilyIndex = e->graphics_queue_family,
+        };
+
+        VK_CHECK(vkCreateCommandPool(e->device, &command_pool_ci, NULL, &e->command_pool));
+
+        VkCommandBufferAllocateInfo command_buf_alloc_ci = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = e->command_pool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1,
+        };
+
+        VK_CHECK(vkAllocateCommandBuffers(e->device, &command_buf_alloc_ci, &e->command_buffer));
+    }
+
+    {
+        VkAttachmentDescription color_attach_desc = {
+            .format = e->swapchain_image_format,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        };
+
+        // TODO: ok, why can not we use VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL here
+        // I now color layout make more sense, but spec does no prohibit
+        VkAttachmentReference color_attachment_ref = {
+            .attachment = 0,
+            .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        };
+
+        // TODO: flags, inputs etc, what to do here
+        VkSubpassDescription subpass_desc = {
+            .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &color_attachment_ref,
+        };
+        
+        // TODO: mask? seems to be acess masks for syncronization in gpu
+        VkSubpassDependency subpass_dep = {
+            .srcSubpass = VK_SUBPASS_EXTERNAL,
+            .dstSubpass = 0,
+            .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccessMask = 0,
+            .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        };
+
+        // TODO: pNext can do more
+        VkRenderPassCreateInfo render_pass_ci = {
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            .attachmentCount = 1,
+            .pAttachments = &color_attach_desc,
+            .subpassCount = 1,
+            .pSubpasses = &subpass_desc,
+            .dependencyCount = 1,
+            .pDependencies = &subpass_dep,
+        };
+        
+        VK_CHECK(vkCreateRenderPass(e->device, &render_pass_ci, NULL, &e->render_pass));
+    }
+
+    {
+        VkFenceCreateInfo fence_ci = {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+        };
+
+        VK_CHECK(vkCreateFence(e->device, &fence_ci, NULL, &e->render_fence));
+
+        VkSemaphoreCreateInfo semaphore_ci = {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        };
+
+        VK_CHECK(vkCreateSemaphore(e->device, &semaphore_ci, NULL, &e->present_sema));
+        VK_CHECK(vkCreateSemaphore(e->device, &semaphore_ci, NULL, &e->render_sema));
+    }
 }
 
 static
-void vulkan_deinit(Engine *e) {
+void base_deinit(Engine *e) {
+    vkDestroySemaphore(e->device, e->render_sema, NULL);
+    vkDestroySemaphore(e->device, e->present_sema, NULL);
+    vkDestroyFence(e->device, e->render_fence, NULL);
+
+
+    vkDestroyRenderPass(e->device, e->render_pass, NULL);
+
+
+    vkFreeCommandBuffers(e->device, e->command_pool, 1, &e->command_buffer);
+    vkDestroyCommandPool(e->device, e->command_pool, NULL);
+
+
     vkDestroyDevice(e->device, NULL);
 
+
     vkDestroySurfaceKHR(e->instance, e->surface, NULL);
+
 
     vkDestroyInstance(e->instance, NULL);
 }
 
-static void memory_init(Engine *e) {
+static
+void vertex_memory_init(Engine *e) {
     {
         VkPhysicalDeviceMemoryProperties mem_properties;
         vkGetPhysicalDeviceMemoryProperties(e->phys_device, &mem_properties);
@@ -259,7 +365,7 @@ static void memory_init(Engine *e) {
 }
 
 static
-void memory_deinit(Engine *e) {
+void vertex_memory_deinit(Engine *e) {
     vkUnmapMemory(e->device, e->memory);
 
     vkFreeMemory(e->device, e->memory, NULL);
@@ -295,9 +401,9 @@ void swapchain_init(Engine *e) {
     VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
     // TODO: you may want to use VK_PRESENT_MODE_MAILBOX_KHR, it actually the best for no vsync
     {
-        VkPresentModeKHR desired = VK_PRESENT_MODE_MAILBOX_KHR;
+        // VkPresentModeKHR desired = VK_PRESENT_MODE_MAILBOX_KHR;
         // VkPresentModeKHR desired = VK_PRESENT_MODE_IMMEDIATE_KHR;
-        // VkPresentModeKHR desired = VK_PRESENT_MODE_FIFO_KHR;
+        VkPresentModeKHR desired = VK_PRESENT_MODE_FIFO_KHR;
 
         uint32_t present_mode_count = 0;
 
@@ -316,14 +422,20 @@ void swapchain_init(Engine *e) {
         free(present_modes);
     }
 
-
     // TODO: VkSurfaceCapabilitiesKHR have a lot of cool info
     VkSurfaceCapabilitiesKHR surface_capabilities;
     VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(e->phys_device, e->surface, &surface_capabilities));
     VkExtent2D swapchain_extent = surface_capabilities.currentExtent;
+    VkExtent2D min_swapchain_extent = surface_capabilities.minImageExtent;
+    VkExtent2D max_swapchain_extent = surface_capabilities.maxImageExtent;
+    printf("swapchain extent %d %d\n", swapchain_extent.width, swapchain_extent.height);
+    printf("swapchain min extent %d %d\n", min_swapchain_extent.width, min_swapchain_extent.height);
+    printf("swapchain max extent %d %d\n", max_swapchain_extent.width, max_swapchain_extent.height);
     if (swapchain_extent.width == 0xFFFFFFFF && swapchain_extent.height == 0xFFFFFFFF) {
-        swapchain_extent.width = WIDTH;
-        swapchain_extent.height = HEIGHT;
+        fprintf(stderr, "swapchain currentExtent have corner case values\n");
+    } else {
+        e->window.width = swapchain_extent.width;
+        e->window.height = swapchain_extent.height;
     }
 
     // NOTE: surface_capabilities.maxImageCount != 0, checked because zero stand for unlimited
@@ -350,7 +462,7 @@ void swapchain_init(Engine *e) {
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
         .presentMode = present_mode,
         .clipped = VK_TRUE,
-        .oldSwapchain = VK_NULL_HANDLE
+        .oldSwapchain = VK_NULL_HANDLE,
     };
 
     VK_CHECK(vkCreateSwapchainKHR(e->device, &swapchain_ci, NULL, &e->swapchain));
@@ -360,8 +472,8 @@ void swapchain_init(Engine *e) {
     {
         // TODO: well we have image_count, but vulkan driver may allocate more, does this even happen?
         VK_CHECK(vkGetSwapchainImagesKHR(e->device, e->swapchain, &e->swapchain_image_count, NULL));
-        e->swapchain_images = malloc(e->swapchain_image_count * sizeof(VkImage));
-        VK_CHECK(vkGetSwapchainImagesKHR(e->device, e->swapchain, &e->swapchain_image_count, e->swapchain_images));
+        VkImage *swapchain_images = malloc(e->swapchain_image_count * sizeof(VkImage));
+        VK_CHECK(vkGetSwapchainImagesKHR(e->device, e->swapchain, &e->swapchain_image_count, swapchain_images));
 
         e->swapchain_image_views = malloc(e->swapchain_image_count * sizeof(VkImageView));
         
@@ -383,9 +495,11 @@ void swapchain_init(Engine *e) {
         };
         
         for (uint32_t i = 0; i < e->swapchain_image_count; i++) {
-            image_view_ci.image = e->swapchain_images[i];
+            image_view_ci.image = swapchain_images[i];
             VK_CHECK(vkCreateImageView(e->device, &image_view_ci, NULL, &e->swapchain_image_views[i]));
         }
+
+        free(swapchain_images);
     }
 }
 
@@ -396,65 +510,8 @@ void swapchain_deinit(Engine *e) {
     }
 
     free(e->swapchain_image_views);
-    free(e->swapchain_images);
 
     vkDestroySwapchainKHR(e->device, e->swapchain, NULL);
-}
-
-static
-void renderpass_init(Engine *e) {
-    VkAttachmentDescription color_attach_desc = {
-        .format = e->swapchain_image_format,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-    };
-
-    // TODO: ok, why can not we use VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL here
-    // I now color layout make more sense, but spec does no prohibit
-    VkAttachmentReference color_attachment_ref = {
-        .attachment = 0,
-        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    };
-
-    // TODO: flags, inputs etc, what to do here
-    VkSubpassDescription subpass_desc = {
-        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &color_attachment_ref,
-    };
-    
-    // TODO: mask? seems to be acess masks for syncronization in gpu
-    VkSubpassDependency subpass_dep = {
-        .srcSubpass = VK_SUBPASS_EXTERNAL,
-        .dstSubpass = 0,
-        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .srcAccessMask = 0,
-        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-    };
-
-    // TODO: pNext can do more
-    VkRenderPassCreateInfo render_pass_ci = {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 1,
-        .pAttachments = &color_attach_desc,
-        .subpassCount = 1,
-        .pSubpasses = &subpass_desc,
-        .dependencyCount = 1,
-        .pDependencies = &subpass_dep,
-    };
-    
-    VK_CHECK(vkCreateRenderPass(e->device, &render_pass_ci, NULL, &e->render_pass));
-}
-
-static
-void renderpass_deinit(Engine *e) {
-    vkDestroyRenderPass(e->device, e->render_pass, NULL);
 }
 
 static
@@ -485,58 +542,6 @@ void framebuffers_deinit(Engine *e) {
     }
 
     free(e->framebuffers);
-}
-
-static
-void command_pool_init(Engine *e) {
-    VkCommandPoolCreateInfo command_pool_ci = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex = e->graphics_queue_family,
-    };
-
-    VK_CHECK(vkCreateCommandPool(e->device, &command_pool_ci, NULL, &e->command_pool));
-
-    VkCommandBufferAllocateInfo command_buf_alloc_ci = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = e->command_pool,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = 1,
-    };
-
-    VK_CHECK(vkAllocateCommandBuffers(e->device, &command_buf_alloc_ci, &e->command_buffer));
-}
-
-static
-void command_pool_deinit(Engine *e) {
-    vkFreeCommandBuffers(e->device, e->command_pool, 1, &e->command_buffer);
-
-    vkDestroyCommandPool(e->device, e->command_pool, NULL);
-}
-
-static
-void sync_structures_init(Engine *e) {
-    VkFenceCreateInfo fence_ci = {
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .flags = VK_FENCE_CREATE_SIGNALED_BIT,
-    };
-
-    VK_CHECK(vkCreateFence(e->device, &fence_ci, NULL, &e->render_fence));
-
-    VkSemaphoreCreateInfo semaphore_ci = {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-    };
-
-    VK_CHECK(vkCreateSemaphore(e->device, &semaphore_ci, NULL, &e->present_sema));
-    VK_CHECK(vkCreateSemaphore(e->device, &semaphore_ci, NULL, &e->render_sema));
-}
-
-static
-void sync_structures_deinit(Engine *e) {
-    vkDestroySemaphore(e->device, e->render_sema, NULL);
-    vkDestroySemaphore(e->device, e->present_sema, NULL);
-
-    vkDestroyFence(e->device, e->render_fence, NULL);
 }
 
 static
@@ -582,7 +587,7 @@ void load_shader_module(Engine *e, const char* filepath, VkShaderModule *out_sha
 }
 
 static
-void pipelines_init(Engine *e) {
+void triangle_pipeline_init(Engine *e) {
     VkShaderModule triangle_frag_shader;
     load_shader_module(e, "triangle.frag.spv", &triangle_frag_shader);
 
@@ -730,7 +735,7 @@ void pipelines_init(Engine *e) {
 }
 
 static
-void pipelines_deinit(Engine *e) {
+void triangle_pipeline_deinit(Engine *e) {
     vkDestroyPipeline(e->device, e->triangle_pipeline, NULL);
 
     vkDestroyPipelineLayout(e->device, e->triangle_pipeline_layout, NULL);
@@ -738,72 +743,64 @@ void pipelines_deinit(Engine *e) {
 
 
 void engine_init(Engine *e, Display *display, Window window) {
-    e->window.width = WIDTH;
-    e->window.height = HEIGHT;
+    base_init(e, display, window);
 
-    vulkan_init(e, display, window);
-
-    printf("VULKAN INITTED\n");
-    fflush(stdout);
-
-    memory_init(e);
-
-    printf("MEMORY INITTED\n"); fflush(stdout);
+    vertex_memory_init(e);
 
     swapchain_init(e);
 
-    printf("SWAPCHAIN INITTED\n"); fflush(stdout);
-
-    renderpass_init(e);
-
-    printf("RENDERPASS INITTED\n"); fflush(stdout);
-
     framebuffers_init(e);
-
-    printf("FRAMEBUFFER INITTED\n"); fflush(stdout);
-
-    command_pool_init(e);
-
-    printf("COMMANDS INITTED\n"); fflush(stdout);
-
-    sync_structures_init(e);
-
-    printf("SYNC INITTED\n"); fflush(stdout);
-
-    pipelines_init(e);
-
-    printf("PIPELINES INITTED\n"); fflush(stdout);
+    
+    triangle_pipeline_init(e);
 }
 
 void engine_deinit(Engine *e) {
     // TODO: correct spot?
     vkDeviceWaitIdle(e->device);
 
-    pipelines_deinit(e); printf("pipelines_deinit(e)\n"); fflush(stdout);
-
-    sync_structures_deinit(e); printf("sync_structures_deinit(e)\n"); fflush(stdout);
-
-    command_pool_deinit(e); printf("command_pool_deinit(e)\n"); fflush(stdout);
+    triangle_pipeline_deinit(e); printf("pipelines_deinit(e)\n"); fflush(stdout);
 
     framebuffers_deinit(e); printf("framebuffers_deinit(e)\n"); fflush(stdout);
 
-    renderpass_deinit(e); printf("renderpass_deinit(e)\n"); fflush(stdout);
-
     swapchain_deinit(e); printf("swapchain_deinit(e)\n"); fflush(stdout);
 
-    memory_deinit(e); ; printf("memory_deinit(e)\n"); fflush(stdout);
+    vertex_memory_deinit(e); ; printf("memory_deinit(e)\n"); fflush(stdout);
 
-    vulkan_deinit(e); printf("vulkan_deinit(e)\n"); fflush(stdout);
+    base_deinit(e); printf("vulkan_deinit(e)\n"); fflush(stdout);
+}
+
+static
+void resize_reinit(Engine *e) {
+    vkDeviceWaitIdle(e->device);
+
+    triangle_pipeline_deinit(e);
+    framebuffers_deinit(e);
+    swapchain_deinit(e);
+
+    swapchain_init(e);
+    framebuffers_init(e);
+    triangle_pipeline_init(e);
 }
 
 void engine_draw(Engine *e, float cycle) {
     VK_CHECK(vkWaitForFences(e->device, 1, &e->render_fence, VK_TRUE, UINT64_MAX));
+
+    uint32_t swapchain_image_index = -1;
+    {
+        VkResult result = vkAcquireNextImageKHR(e->device, e->swapchain, UINT64_MAX, e->present_sema, NULL, &swapchain_image_index);
+        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+            fprintf(stderr, "acquire next image %d\n", result);
+            exit(1);
+        }
+        if (result == VK_SUBOPTIMAL_KHR) {
+            printf("index %d\n", swapchain_image_index);
+            resize_reinit(e);
+            return;
+        }
+    }
+
     VK_CHECK(vkResetFences(e->device, 1, &e->render_fence));
-
     vkResetCommandBuffer(e->command_buffer, 0);
-
-    uint32_t swapchain_image_index;
-    VK_CHECK(vkAcquireNextImageKHR(e->device, e->swapchain, UINT64_MAX, e->present_sema, NULL, &swapchain_image_index));
 
     VkCommandBufferBeginInfo command_buf_begin_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -814,7 +811,7 @@ void engine_draw(Engine *e, float cycle) {
     VK_CHECK(vkBeginCommandBuffer(e->command_buffer, &command_buf_begin_info));
 
     VkClearValue clear_value = {
-        .color.float32 = { 0.0f, 0.0f, 0.0f, 1.0f },
+        .color.float32 = { 0.2f, 0.2f, 0.2f, 1.0f },
     };
 
     VkRenderPassBeginInfo render_pass_begin_info = {
@@ -833,9 +830,9 @@ void engine_draw(Engine *e, float cycle) {
     };
 
     float mod_cycle = -cycle - 0.5f;
-    float alpha = (mod_cycle) * 2 * PI;
-    float beta = (mod_cycle + 1.0 / 3.0) * 2 * PI;
-    float gamma = (mod_cycle + 2.0 / 3.0) * 2 * PI;
+    float alpha = (mod_cycle) * 2 * M_PI;
+    float beta = (mod_cycle + 1.0 / 3.0) * 2 * M_PI;
+    float gamma = (mod_cycle + 2.0 / 3.0) * 2 * M_PI;
     float vertices[] = {
         sinf(alpha) / 2.0, cosf(alpha) / 2.0,
         sinf(beta) / 2.0, cosf(beta) / 2.0,
@@ -889,5 +886,17 @@ void engine_draw(Engine *e, float cycle) {
         .pImageIndices = &swapchain_image_index,
     };
 
-    VK_CHECK(vkQueuePresentKHR(e->graphics_queue, &present_info));
+    {
+        VkResult result = vkQueuePresentKHR(e->graphics_queue, &present_info);
+        
+        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+            fprintf(stderr, "acquire next image %d\n", result);
+            exit(1);
+        }
+        if (result == VK_SUBOPTIMAL_KHR) {
+            printf("sub queue\n");  
+            resize_reinit(e);
+            return;
+        }
+    }
 }

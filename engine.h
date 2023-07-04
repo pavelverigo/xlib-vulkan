@@ -1,11 +1,13 @@
 #ifndef ENGINE_H
 #define ENGINE_H
 
-#include <vulkan/vulkan.h>
 #include <stdlib.h>
+
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-#include <vulkan/vulkan_xlib.h>
+
+#define VK_USE_PLATFORM_XLIB_KHR
+#include <vulkan/vulkan.h>
 
 // TODO: reorder and comment
 typedef struct Engine {
@@ -13,7 +15,6 @@ typedef struct Engine {
     VkSurfaceKHR surface;
 
     uint32_t swapchain_image_count;
-    VkImage *swapchain_images;
     VkImageView *swapchain_image_views;
     VkFormat swapchain_image_format;
 

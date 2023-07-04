@@ -1,12 +1,12 @@
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <vulkan/vulkan.h>
 #include <time.h>
 #include <math.h>
+
 #include "engine.h"
-#include <vulkan/vulkan_xlib.h>
+
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
 
 #define WIDTH 600
 #define HEIGHT 600
@@ -24,7 +24,9 @@ float diff_time_ms(struct timespec *t1) {
 }
 
 int main() {
-    // Initialize X11
+    // I want to see output before segmentation fault
+    setbuf(stdout, NULL);
+
     Display *display = XOpenDisplay(NULL);
 
     if (display == NULL) {
@@ -73,8 +75,6 @@ int main() {
     int mouse_inside = 0;
     int mouse_x = 0;
     int mouse_y = 0;
-
-    // XTextProperty title;
 
     char window_title[32];
 
@@ -160,7 +160,7 @@ int main() {
 
         engine_draw(&engine, accum_cycle);
 
-        nanosleep(&sleep_t, NULL);
+        // nanosleep(&sleep_t, NULL);
     }
 
     engine_deinit(&engine);
