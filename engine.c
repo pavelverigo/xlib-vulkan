@@ -94,6 +94,59 @@ void base_init(Engine *e, Display *display, Window window) {
         free(phys_devices);
     }
 
+    // Get information about surface formats and present mode
+    {
+        {
+            VkFormat desired_format = VK_FORMAT_B8G8R8A8_UNORM;
+            VkColorSpaceKHR desired_color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+
+            uint32_t format_count;
+            VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(e->phys_device, e->surface, &format_count, NULL));
+            VkSurfaceFormatKHR *surface_formats = malloc(format_count * sizeof(VkSurfaceFormatKHR));
+            VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(e->phys_device, e->surface, &format_count, surface_formats));
+
+            uint32_t i = 0;
+            for (; i < format_count; i++) {
+                if (surface_formats[i].format == desired_format && surface_formats[i].colorSpace == desired_color_space) {
+                    e->surface_format = surface_formats[i];
+                    break;
+                }
+            }
+
+            if (i == format_count) {
+                fprintf(stderr, "i == format_count\n");
+                exit(1);
+            }
+
+            free(surface_formats);
+        }
+        
+        // TODO: fifo is always avaible we may be want to query another one
+        e->present_mode = VK_PRESENT_MODE_FIFO_KHR;
+        // TODO: you may want to use VK_PRESENT_MODE_MAILBOX_KHR, it actually the best for no vsync
+        {
+            VkPresentModeKHR desired = VK_PRESENT_MODE_MAILBOX_KHR;
+            // VkPresentModeKHR desired = VK_PRESENT_MODE_IMMEDIATE_KHR;
+            // VkPresentModeKHR desired = VK_PRESENT_MODE_FIFO_KHR;
+
+            uint32_t present_mode_count = 0;
+
+            VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(e->phys_device, e->surface, &present_mode_count, NULL));
+            VkPresentModeKHR *present_modes = malloc(present_mode_count * sizeof(VkPresentModeKHR) );
+            VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(e->phys_device,  e->surface, &present_mode_count, present_modes));
+
+            for (uint32_t i = 0; i < present_mode_count; i++) {
+                if (present_modes[i] == desired) {
+                    e->present_mode = desired;
+                    printf("Found desired present mode: %d\n", desired);
+                    break;
+                }
+            }
+
+            free(present_modes);
+        }
+    }
+
     // TODO: pick queue better, may be you want specific one
     {
         e->graphics_queue_family = UINT32_MAX;
@@ -180,10 +233,8 @@ void base_init(Engine *e, Display *display, Window window) {
     }
 
     {
-        e->swapchain_image_format = VK_FORMAT_B8G8R8A8_SRGB;
-
         VkAttachmentDescription color_attach_desc = {
-            .format = e->swapchain_image_format,
+            .format = e->surface_format.format,
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -383,54 +434,6 @@ void vertex_memory_deinit(Engine *e) {
 
 static
 void swapchain_init(Engine *e) {
-    VkSurfaceFormatKHR surface_format;
-    {
-        uint32_t format_count;
-        VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(e->phys_device, e->surface, &format_count, NULL));
-        VkSurfaceFormatKHR *surface_formats = malloc(format_count * sizeof(VkSurfaceFormatKHR));
-        VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(e->phys_device, e->surface, &format_count, surface_formats));
-
-        uint32_t i = 0;
-        for (; i < format_count; i++) {
-            if (surface_formats[i].format == e->swapchain_image_format && surface_formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                surface_format = surface_formats[i];
-                break;
-            }
-        }
-
-        if (i == format_count) {
-            fprintf(stderr, "i == format_count\n");
-            exit(1);
-        }
-
-        free(surface_formats);
-    }
-    
-    // TODO: fifo is always avaible we may be want to query another one
-    VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
-    // TODO: you may want to use VK_PRESENT_MODE_MAILBOX_KHR, it actually the best for no vsync
-    {
-        // VkPresentModeKHR desired = VK_PRESENT_MODE_MAILBOX_KHR;
-        // VkPresentModeKHR desired = VK_PRESENT_MODE_IMMEDIATE_KHR;
-        VkPresentModeKHR desired = VK_PRESENT_MODE_FIFO_KHR;
-
-        uint32_t present_mode_count = 0;
-
-        VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(e->phys_device, e->surface, &present_mode_count, NULL));
-        VkPresentModeKHR *present_modes = malloc(present_mode_count * sizeof(VkPresentModeKHR) );
-        VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(e->phys_device,  e->surface, &present_mode_count, present_modes));
-
-        for (uint32_t i = 0; i < present_mode_count; i++) {
-            if (present_modes[i] == desired) {
-                present_mode = desired;
-                printf("Found desired present mode: %d\n", desired);
-                break;
-            }
-        }
-
-        free(present_modes);
-    }
-
     // TODO: VkSurfaceCapabilitiesKHR have a lot of cool info
     VkSurfaceCapabilitiesKHR surface_capabilities;
     VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(e->phys_device, e->surface, &surface_capabilities));
@@ -462,14 +465,14 @@ void swapchain_init(Engine *e) {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = e->surface,
         .minImageCount = image_count,
-        .imageFormat = surface_format.format,
-        .imageColorSpace = surface_format.colorSpace,
+        .imageFormat = e->surface_format.format,
+        .imageColorSpace = e->surface_format.colorSpace,
         .imageExtent = swapchain_extent,
         .imageArrayLayers = 1, // TODO: For non-stereoscopic-3D applications, this value is 1, WTF?
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         .preTransform = surface_capabilities.currentTransform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = present_mode,
+        .presentMode = e->present_mode,
         .clipped = VK_TRUE,
         .oldSwapchain = VK_NULL_HANDLE,
     };
@@ -490,7 +493,7 @@ void swapchain_init(Engine *e) {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             // .image = e->swapchain_images[i],
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = surface_format.format,
+            .format = e->surface_format.format,
             // .components // becomes identity being zero
             .subresourceRange = {
                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -611,7 +614,8 @@ void triangle_pipeline_init(Engine *e) {
         .pPushConstantRanges = NULL,
     };
 
-    VK_CHECK(vkCreatePipelineLayout(e->device, &pipeline_layout_ci, NULL, &e->triangle_pipeline_layout));
+    VkPipelineLayout triangle_pipeline_layout;
+    VK_CHECK(vkCreatePipelineLayout(e->device, &pipeline_layout_ci, NULL, &triangle_pipeline_layout));
 
     // TODO flags are interested here also
     VkPipelineShaderStageCreateInfo vertex_shader_stage_ci = {
@@ -726,7 +730,7 @@ void triangle_pipeline_init(Engine *e) {
         .pMultisampleState = &multisample_ci,
         .pColorBlendState = &color_blend_ci,
         .pDynamicState = &dynamic_state_ci,
-        .layout = e->triangle_pipeline_layout,
+        .layout = triangle_pipeline_layout,
         .renderPass = e->render_pass,
         .subpass = 0,
         .basePipelineHandle = VK_NULL_HANDLE,
@@ -736,18 +740,20 @@ void triangle_pipeline_init(Engine *e) {
 
     vkDestroyShaderModule(e->device, triangle_frag_shader, NULL);
     vkDestroyShaderModule(e->device, triangle_vert_shader, NULL);
+
+    vkDestroyPipelineLayout(e->device, triangle_pipeline_layout, NULL);
 }
 
 static
 void triangle_pipeline_deinit(Engine *e) {
     vkDestroyPipeline(e->device, e->triangle_pipeline, NULL);
-
-    vkDestroyPipelineLayout(e->device, e->triangle_pipeline_layout, NULL);
 }
 
 
-void engine_init(Engine *e, Display *display, Window window) {
+void engine_init_xlib(Engine *e, int width, int height, Display *display, Window window) {
     e->resize_pending = 0;
+    e->signaled_width = width;
+    e->signaled_height = height;
 
     base_init(e, display, window);
 
@@ -764,30 +770,32 @@ void engine_deinit(Engine *e) {
     // TODO: correct spot?
     vkDeviceWaitIdle(e->device);
 
-    triangle_pipeline_deinit(e); printf("pipelines_deinit(e)\n"); fflush(stdout);
+    triangle_pipeline_deinit(e);
 
-    framebuffers_deinit(e); printf("framebuffers_deinit(e)\n"); fflush(stdout);
+    framebuffers_deinit(e);
 
-    swapchain_deinit(e); printf("swapchain_deinit(e)\n"); fflush(stdout);
+    swapchain_deinit(e);
 
-    vertex_memory_deinit(e); ; printf("memory_deinit(e)\n"); fflush(stdout);
+    vertex_memory_deinit(e);
 
-    base_deinit(e); printf("vulkan_deinit(e)\n"); fflush(stdout);
+    base_deinit(e);
+}
+
+void engine_signal_resize(Engine *e, int width, int height) {
+    e->resize_pending = 1;
+    e->signaled_width = width;
+    e->signaled_height = height;
 }
 
 static
 void resize_reinit(Engine *e) {
     vkDeviceWaitIdle(e->device);
 
-    printf("RESIZE\n");
-
-    triangle_pipeline_deinit(e);
     framebuffers_deinit(e);
     swapchain_deinit(e);
 
     swapchain_init(e);
     framebuffers_init(e);
-    triangle_pipeline_init(e);
 }
 
 void engine_draw(Engine *e, float cycle) {
@@ -795,19 +803,19 @@ void engine_draw(Engine *e, float cycle) {
 
     if (e->resize_pending) {
         resize_reinit(e);
-
         e->resize_pending = 0;
     }
 
     uint32_t swapchain_image_index = -1;
     {
-        VkResult result = vkAcquireNextImageKHR(e->device, e->swapchain, 1000000000, e->present_sema, NULL, &swapchain_image_index);
+        VkResult result = vkAcquireNextImageKHR(e->device, e->swapchain, UINT64_MAX, e->present_sema, NULL, &swapchain_image_index);
+        // TODO: VK_ERROR_OUT_OF_DATE_KHR
         if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-            fprintf(stderr, "acquire next image %d\n", result);
+            fprintf(stderr, "vkAcquireNextImageKHR (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)\n");
             exit(1);
         }
-        if (result == VK_SUBOPTIMAL_KHR) {
-            printf("index %d\n", swapchain_image_index);
+        if (result == VK_SUBOPTIMAL_KHR && !e->resize_pending) {
+            printf("vkAcquireNextImageKHR VK_SUBOPTIMAL_KHR\n");
             e->resize_pending = 1;
         }
     }
@@ -918,13 +926,13 @@ void engine_draw(Engine *e, float cycle) {
 
     {
         VkResult result = vkQueuePresentKHR(e->graphics_queue, &present_info);
-        
+        // TODO: VK_ERROR_OUT_OF_DATE_KHR        
         if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-            fprintf(stderr, "acquire next image %d\n", result);
+            fprintf(stderr, "vkQueuePresentKHR (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)\n");
             exit(1);
         }
-        if (result == VK_SUBOPTIMAL_KHR) {
-            printf("sub queue\n");  
+        if (result == VK_SUBOPTIMAL_KHR && !e->resize_pending) {
+            printf("vkQueuePresentKHR VK_SUBOPTIMAL_KHR \n");  
             e->resize_pending = 1;
         }
     }

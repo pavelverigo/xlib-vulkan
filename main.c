@@ -11,6 +11,24 @@
 #define WIDTH 600
 #define HEIGHT 600
 
+typedef struct FPSCounter {
+    float data[16];
+    float prev;
+    int i;
+} FPSCounter;
+
+float fps_append_and_measure(FPSCounter *f, float nm) {
+    float sum_prev = f->prev - f->data[f->i];
+    f->data[f->i] = nm;
+    f->i++;
+    if (f->i == 16) {
+        f->i = 0;
+    }
+    float new_sum = sum_prev + nm;
+    f->prev = new_sum;
+    return new_sum / 16;
+}
+
 float diff_time_ms(struct timespec *t1) {
     struct timespec t2;
     clock_gettime(CLOCK_MONOTONIC, &t2);
@@ -52,19 +70,22 @@ int main() {
     XSetWMProtocols(display, window, &WM_DELETE_WINDOW, 1);
 
     Engine engine;
-    engine_init(&engine, display, window);    
+    engine_init_xlib(&engine, WIDTH, HEIGHT, display, window);    
 
     struct timespec delta_timer, debug_timer;
     clock_gettime(CLOCK_MONOTONIC, &delta_timer);
     clock_gettime(CLOCK_MONOTONIC, &debug_timer); 
 
-    struct timespec sleep_t = {
-        .tv_nsec = 1 * 1000000,
-    };
+    // struct timespec sleep_t = {
+    //     .tv_nsec = 1 * 1000000,
+    // };
 
-    // engine_draw(&engine);
+    FPSCounter counter = {0};
 
     int running = 1;
+
+    int width = WIDTH;
+    int height = HEIGHT;
 
     float min_cycle_ms = 500;
     float max_cycle_ms = 5000;
@@ -86,7 +107,8 @@ int main() {
 
         {
             XTextProperty title;
-            snprintf(window_title, sizeof(window_title), "FPS: %.2f", 1000.0 / delta_ms);
+            float val = fps_append_and_measure(&counter, 1000.0f / delta_ms);
+            snprintf(window_title, sizeof(window_title), "FPS: %.2f", val);
             char *list[] = {window_title};
             XStringListToTextProperty(list, 1, &title);
             XSetWMName(display, window, &title);
@@ -110,8 +132,6 @@ int main() {
             }
 
             cur_cycle = min_cycle_ms + (max_cycle_ms - min_cycle_ms) * alpha;
-
-            // printf("cycle %.2f\n", cur_cycle);
         }
 
         accum_cycle += delta_ms / cur_cycle;
@@ -124,30 +144,29 @@ int main() {
             XNextEvent(display, &event);
 
             if (event.type == Expose) {
-                // printf("event.type == Expose\n");
+                // TODO
             } else if (event.type == KeyPress) {
-                // printf("event.type == KeyPress\n");
                 running = 0;
                 break;
             } else if (event.type == ConfigureNotify) {
-                // printf("event.type == ConfigureNotify\n");
-                engine.resize_pending = 1;
+                if (!(width == event.xconfigure.width &&
+                     height == event.xconfigure.height)) {
+                    width = event.xconfigure.width;
+                    height = event.xconfigure.height;
+                    engine_signal_resize(&engine, width, height);
+                }
             } else if (event.type == ClientMessage) {
                 if (event.xclient.message_type == WM_PROTOCOLS && event.xclient.data.l[0] == WM_DELETE_WINDOW) {
-                    // printf("WM_DELETE_WINDOW\n");
                     running = 0;
                     break;
                 }
             } else if (event.type == MotionNotify) {
                 mouse_x = event.xmotion.x;
                 mouse_y = event.xmotion.y;
-                // printf("Mouse position: (%d, %d)\n", mouse_x, mouse_y);
             } else if (event.type == EnterNotify) {
                 mouse_inside = 1;
-                // printf("Mouse enter\n");
             } else if (event.type == LeaveNotify) {
                 mouse_inside = 0;
-                // printf("Mouse leave\n");
             }
         }
 
@@ -157,7 +176,6 @@ int main() {
         
         // float x_ms = diff_time_ms(&debug_timer);
         // printf("x_ms %.2f ms\n", x_ms);
-        
 
         engine_draw(&engine, accum_cycle);
 
