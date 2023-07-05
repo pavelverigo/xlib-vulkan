@@ -747,6 +747,8 @@ void triangle_pipeline_deinit(Engine *e) {
 
 
 void engine_init(Engine *e, Display *display, Window window) {
+    e->resize_pending = 0;
+
     base_init(e, display, window);
 
     vertex_memory_init(e);
@@ -791,17 +793,22 @@ void resize_reinit(Engine *e) {
 void engine_draw(Engine *e, float cycle) {
     VK_CHECK(vkWaitForFences(e->device, 1, &e->render_fence, VK_TRUE, UINT64_MAX));
 
+    if (e->resize_pending) {
+        resize_reinit(e);
+
+        e->resize_pending = 0;
+    }
+
     uint32_t swapchain_image_index = -1;
     {
-        VkResult result = vkAcquireNextImageKHR(e->device, e->swapchain, UINT64_MAX, e->present_sema, NULL, &swapchain_image_index);
+        VkResult result = vkAcquireNextImageKHR(e->device, e->swapchain, 1000000000, e->present_sema, NULL, &swapchain_image_index);
         if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
             fprintf(stderr, "acquire next image %d\n", result);
             exit(1);
         }
         if (result == VK_SUBOPTIMAL_KHR) {
             printf("index %d\n", swapchain_image_index);
-            resize_reinit(e);
-            return;
+            e->resize_pending = 1;
         }
     }
 
@@ -918,8 +925,7 @@ void engine_draw(Engine *e, float cycle) {
         }
         if (result == VK_SUBOPTIMAL_KHR) {
             printf("sub queue\n");  
-            resize_reinit(e);
-            return;
+            e->resize_pending = 1;
         }
     }
 }

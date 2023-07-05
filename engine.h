@@ -34,6 +34,8 @@ typedef struct Engine {
 
     uint32_t graphics_queue_family;
 
+    int resize_pending;
+
     VkCommandPool command_pool;
     VkCommandBuffer command_buffer;
 

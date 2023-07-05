@@ -131,6 +131,7 @@ int main() {
                 break;
             } else if (event.type == ConfigureNotify) {
                 // printf("event.type == ConfigureNotify\n");
+                engine.resize_pending = 1;
             } else if (event.type == ClientMessage) {
                 if (event.xclient.message_type == WM_PROTOCOLS && event.xclient.data.l[0] == WM_DELETE_WINDOW) {
                     // printf("WM_DELETE_WINDOW\n");
