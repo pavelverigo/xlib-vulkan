@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include <X11/Xutil.h>
+#include <vulkan/vulkan_core.h>
 
 #define VK_USE_PLATFORM_XLIB_KHR
 #include <vulkan/vulkan.h>
@@ -37,11 +38,17 @@ void base_init(Engine *e, Display *display, Window window) {
             VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
         };
 
+        const char *layers[] = {
+            "VK_LAYER_KHRONOS_validation",
+        };
+
         // TODO: VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR can be set for flags
         // TODO: layers
         VkInstanceCreateInfo instance_ci = {
             .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
             .pApplicationInfo = &app_info,
+            .enabledLayerCount = sizeof(layers) / sizeof(const char *),
+            .ppEnabledLayerNames = layers,
             .enabledExtensionCount = sizeof(global_extensions) / sizeof(const char *),
             .ppEnabledExtensionNames = global_extensions,
         };
@@ -173,6 +180,8 @@ void base_init(Engine *e, Display *display, Window window) {
     }
 
     {
+        e->swapchain_image_format = VK_FORMAT_B8G8R8A8_SRGB;
+
         VkAttachmentDescription color_attach_desc = {
             .format = e->swapchain_image_format,
             .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -383,7 +392,7 @@ void swapchain_init(Engine *e) {
 
         uint32_t i = 0;
         for (; i < format_count; i++) {
-            if (surface_formats[i].format == VK_FORMAT_B8G8R8A8_UNORM && surface_formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+            if (surface_formats[i].format == e->swapchain_image_format && surface_formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
                 surface_format = surface_formats[i];
                 break;
             }
@@ -466,8 +475,6 @@ void swapchain_init(Engine *e) {
     };
 
     VK_CHECK(vkCreateSwapchainKHR(e->device, &swapchain_ci, NULL, &e->swapchain));
-
-    e->swapchain_image_format = surface_format.format;
 
     {
         // TODO: well we have image_count, but vulkan driver may allocate more, does this even happen?
@@ -623,27 +630,12 @@ void triangle_pipeline_init(Engine *e) {
 
     VkPipelineShaderStageCreateInfo shader_stages[2] = {vertex_shader_stage_ci, fragment_shader_stage_ci};
 
-    VkViewport viewport = {
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = e->window.width,
-        .height = e->window.height,
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f,
-    };
-
-    VkRect2D scissor_rect2d = {
-        .offset = {.x = 0, .y = 0},
-        .extent = e->window,
-    };
-
     // TODO: pNext may do more intersting, especially on NV
+    // both viewport and scissor are dynamic, because of resize behaviour
     VkPipelineViewportStateCreateInfo viewport_state_ci = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
         .viewportCount = 1,
-        .pViewports = &viewport,
         .scissorCount = 1,
-        .pScissors = &scissor_rect2d,
     };
 
     // Well, we do not want to do any complex blending
@@ -712,7 +704,18 @@ void triangle_pipeline_init(Engine *e) {
         .alphaToOneEnable = VK_FALSE,
     };
 
-    VkGraphicsPipelineCreateInfo pipelineInfo = {
+    VkDynamicState dynamic_states[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR,
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamic_state_ci = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = sizeof(dynamic_states) / sizeof(VkDynamicState),
+        .pDynamicStates = dynamic_states,
+    };
+
+    VkGraphicsPipelineCreateInfo pipeline_ci = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .stageCount = 2,
         .pStages = shader_stages,
@@ -722,13 +725,14 @@ void triangle_pipeline_init(Engine *e) {
         .pRasterizationState = &raster_ci,
         .pMultisampleState = &multisample_ci,
         .pColorBlendState = &color_blend_ci,
+        .pDynamicState = &dynamic_state_ci,
         .layout = e->triangle_pipeline_layout,
         .renderPass = e->render_pass,
         .subpass = 0,
         .basePipelineHandle = VK_NULL_HANDLE,
     };
     
-    VK_CHECK(vkCreateGraphicsPipelines(e->device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &e->triangle_pipeline));
+    VK_CHECK(vkCreateGraphicsPipelines(e->device, VK_NULL_HANDLE, 1, &pipeline_ci, NULL, &e->triangle_pipeline));
 
     vkDestroyShaderModule(e->device, triangle_frag_shader, NULL);
     vkDestroyShaderModule(e->device, triangle_vert_shader, NULL);
@@ -772,6 +776,8 @@ void engine_deinit(Engine *e) {
 static
 void resize_reinit(Engine *e) {
     vkDeviceWaitIdle(e->device);
+
+    printf("RESIZE\n");
 
     triangle_pipeline_deinit(e);
     framebuffers_deinit(e);
@@ -841,16 +847,33 @@ void engine_draw(Engine *e, float cycle) {
 
     memcpy(e->mapped_data, vertices, sizeof(vertices));
 
+    VkViewport viewport = {
+        .x = 0.0f,
+        .y = 0.0f,
+        .width = e->window.width,
+        .height = e->window.height,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+    };
+
+    VkRect2D scissor_rect2d = {
+        .offset = {.x = 0, .y = 0},
+        .extent = e->window,
+    };
+
     vkCmdBeginRenderPass(e->command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(e->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, e->triangle_pipeline);
+
+    vkCmdSetViewport(e->command_buffer, 0, 1, &viewport);
+    vkCmdSetScissor(e->command_buffer, 0, 1, &scissor_rect2d);
 
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(e->command_buffer, 0, 1, &e->buffer, offsets);
 
-    vkCmdBindPipeline(e->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, e->triangle_pipeline);
     vkCmdDraw(e->command_buffer, 3, 1, 0, 0);
 
     vkCmdEndRenderPass(e->command_buffer);
-    
 
     VK_CHECK(vkEndCommandBuffer(e->command_buffer));
 
