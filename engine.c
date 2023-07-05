@@ -38,7 +38,21 @@ void base_init(Engine *e, Display *display, Window window) {
             VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
         };
 
-        const char *layers[] = {
+        {
+            uint32_t layer_count;
+            vkEnumerateInstanceLayerProperties(&layer_count, NULL);
+            VkLayerProperties *layer_props = malloc(layer_count * sizeof(VkLayerProperties));
+            vkEnumerateInstanceLayerProperties(&layer_count, layer_props);
+            printf("Instance layers found: %d\n", layer_count);
+            for (uint32_t i = 0; i < layer_count; i++) {
+                printf("I: %d, Name: %s, Spec: %d, Impl: %d\n",
+                        i, layer_props[i].layerName, layer_props[i].specVersion, layer_props[i].implementationVersion);
+            }
+
+            free(layer_props);
+        }
+
+        const char *gloabal_layers[] = {
             "VK_LAYER_KHRONOS_validation",
         };
 
@@ -47,8 +61,8 @@ void base_init(Engine *e, Display *display, Window window) {
         VkInstanceCreateInfo instance_ci = {
             .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
             .pApplicationInfo = &app_info,
-            .enabledLayerCount = sizeof(layers) / sizeof(const char *),
-            .ppEnabledLayerNames = layers,
+            .enabledLayerCount = sizeof(gloabal_layers) / sizeof(const char *),
+            .ppEnabledLayerNames = gloabal_layers,
             .enabledExtensionCount = sizeof(global_extensions) / sizeof(const char *),
             .ppEnabledExtensionNames = global_extensions,
         };
@@ -68,7 +82,10 @@ void base_init(Engine *e, Display *display, Window window) {
     }
 
     // TODO: pick device better, may be you want specific one
+    // TODO: is there way to query primary GPU on wayland or X11, there is github issue on vk loader repo though
     {
+        uint32_t desired = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU | VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+
         uint32_t device_count = 0;
         VK_CHECK(vkEnumeratePhysicalDevices(e->instance, &device_count, NULL));
         VkPhysicalDevice *phys_devices = malloc(device_count * sizeof(VkPhysicalDevice));
@@ -76,12 +93,18 @@ void base_init(Engine *e, Display *display, Window window) {
 
         e->phys_device = VK_NULL_HANDLE;
 
+        printf("Physical devices found: %d\n", device_count);
         for (uint32_t i = 0; i < device_count; i++) {
+            VkPhysicalDeviceProperties prop;
+            vkGetPhysicalDeviceProperties(phys_devices[i], &prop);
+            printf("I: %d, Api: %d, Driver: %d, Vendor: %d, Device %d, Type: %d, Name: %s\n",
+                    i, prop.apiVersion, prop.driverVersion, prop.vendorID, prop.deviceID, prop.deviceType, prop.deviceName);
+
             VkBool32 supported = VK_FALSE;
             VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(phys_devices[i], 0, e->surface, &supported));
-            if (supported == VK_TRUE) {
+            if (supported == VK_TRUE && (e->phys_device == VK_NULL_HANDLE || (prop.deviceType & desired))) {
+                printf("Device selected: %d\n", i);
                 e->phys_device = phys_devices[i];
-                break;
             }
         }
 
@@ -104,17 +127,19 @@ void base_init(Engine *e, Display *display, Window window) {
             VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(e->phys_device, e->surface, &format_count, NULL));
             VkSurfaceFormatKHR *surface_formats = malloc(format_count * sizeof(VkSurfaceFormatKHR));
             VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(e->phys_device, e->surface, &format_count, surface_formats));
-
-            uint32_t i = 0;
-            for (; i < format_count; i++) {
-                if (surface_formats[i].format == desired_format && surface_formats[i].colorSpace == desired_color_space) {
+            
+            printf("Surface formats found: %d\n", format_count);
+            int found = 0;
+            for (uint32_t i = 0; i < format_count; i++) {
+                printf("I: %d, Format %d, Color space: %d\n", i, surface_formats[i].format, surface_formats[i].colorSpace);
+                if (!found && surface_formats[i].format == desired_format && surface_formats[i].colorSpace == desired_color_space) {
                     e->surface_format = surface_formats[i];
-                    break;
+                    found = 1;
                 }
             }
 
-            if (i == format_count) {
-                fprintf(stderr, "i == format_count\n");
+            if (!found) {
+                fprintf(stderr, "Desired surface format not found\n");
                 exit(1);
             }
 
@@ -125,21 +150,21 @@ void base_init(Engine *e, Display *display, Window window) {
         e->present_mode = VK_PRESENT_MODE_FIFO_KHR;
         // TODO: you may want to use VK_PRESENT_MODE_MAILBOX_KHR, it actually the best for no vsync
         {
-            VkPresentModeKHR desired = VK_PRESENT_MODE_MAILBOX_KHR;
+            // VkPresentModeKHR desired = VK_PRESENT_MODE_MAILBOX_KHR;
             // VkPresentModeKHR desired = VK_PRESENT_MODE_IMMEDIATE_KHR;
-            // VkPresentModeKHR desired = VK_PRESENT_MODE_FIFO_KHR;
+            VkPresentModeKHR desired = VK_PRESENT_MODE_FIFO_KHR;
 
             uint32_t present_mode_count = 0;
-
             VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(e->phys_device, e->surface, &present_mode_count, NULL));
             VkPresentModeKHR *present_modes = malloc(present_mode_count * sizeof(VkPresentModeKHR) );
             VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(e->phys_device,  e->surface, &present_mode_count, present_modes));
-
+            
+            printf("Present modes found: %d\n", present_mode_count);
             for (uint32_t i = 0; i < present_mode_count; i++) {
+                printf("I: %d, Mode: %d\n", i, present_modes[i]);
                 if (present_modes[i] == desired) {
                     e->present_mode = desired;
                     printf("Found desired present mode: %d\n", desired);
-                    break;
                 }
             }
 
@@ -156,19 +181,22 @@ void base_init(Engine *e, Display *display, Window window) {
         VkQueueFamilyProperties *queue_families = malloc(queue_family_count * sizeof(VkQueueFamilyProperties));
         vkGetPhysicalDeviceQueueFamilyProperties(e->phys_device, &queue_family_count, queue_families);
 
+        printf("Queue families found: %d\n", queue_family_count);
         for (uint32_t i = 0; i < queue_family_count; i++) {
-            if (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            printf("I: %d, Flags: %d, Count %d\n", i, queue_families[i].queueFlags, queue_families[i].queueCount);
+
+            if (e->graphics_queue_family == UINT32_MAX && (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
                 VkBool32 supported = VK_FALSE;
                 VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(e->phys_device, i, e->surface, &supported));
                 if (supported == VK_TRUE) {
                     e->graphics_queue_family = i;
-                    break;
+                    printf("Found queue family: %d\n", i);
                 }
             }
         }
 
         if (e->graphics_queue_family == UINT32_MAX) {
-            fprintf(stderr, "e->graphics_queue_family == UINT32_MAX\n");
+            fprintf(stderr, "Graphic queue family not found\n");
             exit(1);
         }
 
@@ -408,7 +436,7 @@ void vertex_memory_init(Engine *e) {
         uint32_t heap_index = mem_prop.memoryTypes[best_mem_type_index].heapIndex;
         double mib_size = mem_prop.memoryHeaps[heap_index].size / 1024.0 / 1024.0;
 
-        printf("Memory found. Heap: %d, Type: %d, Size: %.2f\n", heap_index, best_mem_type_index, mib_size);
+        printf("Memory chosen. Heap: %d, Type: %d, Size: %.2f\n", heap_index, best_mem_type_index, mib_size);
     }
 
     VkMemoryAllocateInfo mem_alloc_info = {
@@ -440,17 +468,17 @@ void swapchain_init(Engine *e) {
     VkExtent2D swapchain_extent = surface_capabilities.currentExtent;
     VkExtent2D min_swapchain_extent = surface_capabilities.minImageExtent;
     VkExtent2D max_swapchain_extent = surface_capabilities.maxImageExtent;
-    printf("swapchain extent %d %d\n", swapchain_extent.width, swapchain_extent.height);
-    printf("swapchain min extent %d %d\n", min_swapchain_extent.width, min_swapchain_extent.height);
-    printf("swapchain max extent %d %d\n", max_swapchain_extent.width, max_swapchain_extent.height);
+    printf("Swapchain extent. Current: (%d, %d), Min: (%d, %d), Max: (%d, %d), Signaled: (%d, %d)\n",
+        swapchain_extent.width, swapchain_extent.height, min_swapchain_extent.width, min_swapchain_extent.height,
+        max_swapchain_extent.width, max_swapchain_extent.height, e->signaled_width, e->signaled_height);
     if (swapchain_extent.width == 0xFFFFFFFF && swapchain_extent.height == 0xFFFFFFFF) {
-        fprintf(stderr, "swapchain currentExtent have corner case values\n");
+        fprintf(stderr, "Swapchain currentExtent have corner case values, TODO is there common system it may happen\n");
     } else {
         e->window.width = swapchain_extent.width;
         e->window.height = swapchain_extent.height;
     }
 
-    // NOTE: surface_capabilities.maxImageCount != 0, checked because zero stand for unlimited
+    // NOTE: surface_capabilities. maxImageCount != 0, checked because zero stand for unlimited
     // triple buffering because if we use VK_PRESENT_MODE_MAILBOX_KHR it is only reasonable alternative
     uint32_t desired_image_count = 3;
     if (surface_capabilities.maxImageCount < desired_image_count && surface_capabilities.maxImageCount != 0) {
@@ -482,6 +510,7 @@ void swapchain_init(Engine *e) {
     {
         // TODO: well we have image_count, but vulkan driver may allocate more, does this even happen?
         VK_CHECK(vkGetSwapchainImagesKHR(e->device, e->swapchain, &e->swapchain_image_count, NULL));
+        // Allocation on resize, well may be we can use stack
         VkImage *swapchain_images = malloc(e->swapchain_image_count * sizeof(VkImage));
         VK_CHECK(vkGetSwapchainImagesKHR(e->device, e->swapchain, &e->swapchain_image_count, swapchain_images));
 
@@ -801,6 +830,7 @@ void resize_reinit(Engine *e) {
 void engine_draw(Engine *e, float cycle) {
     VK_CHECK(vkWaitForFences(e->device, 1, &e->render_fence, VK_TRUE, UINT64_MAX));
 
+    // TODO: before or after fence?
     if (e->resize_pending) {
         resize_reinit(e);
         e->resize_pending = 0;
