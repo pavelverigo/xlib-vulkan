@@ -9,7 +9,9 @@ glslangValidator -V triangle.frag -o triangle.frag.spv
 
 Build:
 ```sh
-gcc -Wall -o triangle main.c engine.c -lX11 -lvulkan -lm
+gcc -O3 -o triangle main.c engine.c -lX11 -lvulkan -lm
+
+gcc -g3 -Wall -Wextra -Wdouble-promotion -fsanitize=address,undefined -o triangle main.c engine.c -lX11 -lvulkan -lm
 ```
 
 Run:
@@ -17,5 +19,6 @@ Run:
 ./triangle
 ```
 
-Result:
+Result (note high FPS rates come from new vacant images present for vsync triple buffering):
+
 ![Triangle rotation GIF](triangle.gif)

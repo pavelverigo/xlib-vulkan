@@ -11,22 +11,24 @@
 #define WIDTH 600
 #define HEIGHT 600
 
+#define FPS_MEASURE_LEN 120
+
 typedef struct FPSCounter {
-    float data[16];
+    float data[FPS_MEASURE_LEN];
     float prev;
     int i;
 } FPSCounter;
 
-float fps_append_and_measure(FPSCounter *f, float nm) {
+float fps_append_and_measure(FPSCounter *f, float m) {
     float sum_prev = f->prev - f->data[f->i];
-    f->data[f->i] = nm;
+    f->data[f->i] = m;
     f->i++;
-    if (f->i == 16) {
+    if (f->i == FPS_MEASURE_LEN) {
         f->i = 0;
     }
-    float new_sum = sum_prev + nm;
+    float new_sum = sum_prev + m;
     f->prev = new_sum;
-    return new_sum / 16;
+    return new_sum / FPS_MEASURE_LEN;
 }
 
 float diff_time_ms(struct timespec *t1) {
@@ -108,7 +110,7 @@ int main() {
         {
             XTextProperty title;
             float val = fps_append_and_measure(&counter, 1000.0f / delta_ms);
-            snprintf(window_title, sizeof(window_title), "FPS: %.2f", val);
+            snprintf(window_title, sizeof(window_title), "FPS: %.2f", (double) val);
             char *list[] = {window_title};
             XStringListToTextProperty(list, 1, &title);
             XSetWMName(display, window, &title);
@@ -120,10 +122,10 @@ int main() {
             float alpha;
 
             if (mouse_inside) {
-                float dx = WIDTH / 2.0f - mouse_x;
-                float dy = HEIGHT / 2.0f - mouse_y;
-                float maxdx = (WIDTH / 2.0f) * (WIDTH / 2.0f);
-                float maxdy = (HEIGHT / 2.0f) * (HEIGHT / 2.0f);
+                float dx = width / 2.0f - mouse_x;
+                float dy = height / 2.0f - mouse_y;
+                float maxdx = (width / 2.0f) * (width / 2.0f);
+                float maxdy = (height / 2.0f) * (width / 2.0f);
                 float diag = dx * dx / maxdx + dy * dy / maxdy;
 
                 alpha = fmin(1.0f, diag);
@@ -135,8 +137,8 @@ int main() {
         }
 
         accum_cycle += delta_ms / cur_cycle;
-        if (accum_cycle > 1.0) {
-            accum_cycle -= 1.0;
+        if (accum_cycle > 1.0f) {
+            accum_cycle -= 1.0f;
         }
 
         while (XPending(display) > 0) {
@@ -156,7 +158,7 @@ int main() {
                     engine_signal_resize(&engine, width, height);
                 }
             } else if (event.type == ClientMessage) {
-                if (event.xclient.message_type == WM_PROTOCOLS && event.xclient.data.l[0] == WM_DELETE_WINDOW) {
+                if (event.xclient.message_type == WM_PROTOCOLS && (Atom)event.xclient.data.l[0] == WM_DELETE_WINDOW) {
                     running = 0;
                     break;
                 }

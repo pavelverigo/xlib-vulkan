@@ -567,7 +567,7 @@ void framebuffers_init(Engine *e) {
     };
 
     e->framebuffers = malloc(e->swapchain_image_count * sizeof(VkFramebuffer));
-    for (int i = 0; i < e->swapchain_image_count; i++) {
+    for (uint32_t i = 0; i < e->swapchain_image_count; i++) {
         framebuffer_ci.pAttachments = &e->swapchain_image_views[i];
 
         VK_CHECK(vkCreateFramebuffer(e->device, &framebuffer_ci, NULL, &e->framebuffers[i]));
@@ -605,13 +605,12 @@ void load_shader_module(Engine *e, const char* filepath, VkShaderModule *out_sha
 
     // Allocate memory and read the file
     uint32_t *buffer = malloc(filesize);
-    if (buffer == NULL) {
-        fprintf(stderr, "Failed to allocate memory\n");
-        exit(1);
+
+    if (fread(buffer, 1, filesize, file) != (size_t)filesize) {
+        fprintf(stderr, "fread failed\n");
+        exit(1);    
     }
 
-    // TODO: fread is strange, especially second paramm
-    fread(buffer, 1, filesize, file);
     fclose(file);
 
     VkShaderModuleCreateInfo shader_module_ci = {
@@ -881,13 +880,13 @@ void engine_draw(Engine *e, float cycle) {
     };
 
     float mod_cycle = -cycle - 0.5f;
-    float alpha = (mod_cycle) * 2 * M_PI;
-    float beta = (mod_cycle + 1.0 / 3.0) * 2 * M_PI;
-    float gamma = (mod_cycle + 2.0 / 3.0) * 2 * M_PI;
+    float alpha = (mod_cycle) * 2 * (float) M_PI;
+    float beta = (mod_cycle + 1.0f / 3.0f) * 2 * (float) M_PI;
+    float gamma = (mod_cycle + 2.0f / 3.0f) * 2 * (float) M_PI;
     float vertices[] = {
-        sinf(alpha) / 2.0, cosf(alpha) / 2.0,
-        sinf(beta) / 2.0, cosf(beta) / 2.0,
-        sinf(gamma) / 2.0, cosf(gamma) / 2.0,
+        sinf(alpha) / 2.0f, cosf(alpha) / 2.0f,
+        sinf(beta) / 2.0f, cosf(beta) / 2.0f,
+        sinf(gamma) / 2.0f, cosf(gamma) / 2.0f,
     };
 
     memcpy(e->mapped_data, vertices, sizeof(vertices));
