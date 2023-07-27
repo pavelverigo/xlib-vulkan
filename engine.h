@@ -5,12 +5,10 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-#include <vulkan/vulkan_core.h>
 
 #define VK_USE_PLATFORM_XLIB_KHR
 #include <vulkan/vulkan.h>
 
-// TODO: reorder and comment
 typedef struct Engine {
     // BASE
     VkInstance instance;

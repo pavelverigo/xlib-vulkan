@@ -6,7 +6,6 @@
 #include <string.h>
 
 #include <X11/Xutil.h>
-#include <vulkan/vulkan_core.h>
 
 #define VK_USE_PLATFORM_XLIB_KHR
 #include <vulkan/vulkan.h>
@@ -838,14 +837,20 @@ void engine_draw(Engine *e, float cycle) {
     uint32_t swapchain_image_index = -1;
     {
         VkResult result = vkAcquireNextImageKHR(e->device, e->swapchain, UINT64_MAX, e->present_sema, NULL, &swapchain_image_index);
-        // TODO: VK_ERROR_OUT_OF_DATE_KHR
-        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-            fprintf(stderr, "vkAcquireNextImageKHR (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)\n");
+        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR && result != VK_ERROR_OUT_OF_DATE_KHR) {
+            fprintf(stderr, "vkAcquireNextImageKHR (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR && result != VK_ERROR_OUT_OF_DATE_KHR)\n");
             exit(1);
         }
         if (result == VK_SUBOPTIMAL_KHR && !e->resize_pending) {
             printf("vkAcquireNextImageKHR VK_SUBOPTIMAL_KHR\n");
             e->resize_pending = 1;
+        }
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+            printf("vkAcquireNextImageKHR VK_ERROR_OUT_OF_DATE_KHR\n");
+            e->resize_pending = 1;
+            // TODO avoid recursion
+            engine_draw(e, cycle);
+            return;
         }
     }
 
@@ -955,14 +960,20 @@ void engine_draw(Engine *e, float cycle) {
 
     {
         VkResult result = vkQueuePresentKHR(e->graphics_queue, &present_info);
-        // TODO: VK_ERROR_OUT_OF_DATE_KHR        
-        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-            fprintf(stderr, "vkQueuePresentKHR (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)\n");
+        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR && result != VK_ERROR_OUT_OF_DATE_KHR) {
+            fprintf(stderr, "vkQueuePresentKHR (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR && result != VK_ERROR_OUT_OF_DATE_KHR)\n");
             exit(1);
         }
         if (result == VK_SUBOPTIMAL_KHR && !e->resize_pending) {
             printf("vkQueuePresentKHR VK_SUBOPTIMAL_KHR \n");  
             e->resize_pending = 1;
+        }
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+            printf("vkQueuePresentKHR VK_ERROR_OUT_OF_DATE_KHR\n");
+            e->resize_pending = 1;
+            // TODO avoid recursion
+            engine_draw(e, cycle);
+            return;
         }
     }
 }

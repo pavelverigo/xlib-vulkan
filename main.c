@@ -165,9 +165,9 @@ int main() {
             } else if (event.type == MotionNotify) {
                 mouse_x = event.xmotion.x;
                 mouse_y = event.xmotion.y;
-            } else if (event.type == EnterNotify) {
+            } else if (event.type == EnterNotify && event.xcrossing.mode == NotifyNormal) {
                 mouse_inside = 1;
-            } else if (event.type == LeaveNotify) {
+            } else if (event.type == LeaveNotify && event.xcrossing.mode == NotifyNormal) {
                 mouse_inside = 0;
             }
         }

@@ -1,5 +1,7 @@
 # Xlib + Vulkan 1.0
 
+For Ubuntu 22.04.
+
 Build shaders:
 ```sh
 glslangValidator -V triangle.vert -o triangle.vert.spv
